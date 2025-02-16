@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: none;
+            background-color: darkslategrey;
+        }
+
+        label {
+            display: block;
+            color: white;
+        }
+
+        input {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body onload="onload()">
+    <div id="optionsDiv" style="position: absolute; right: 0; padding: 2vh;">
+        <button onclick="generateWithSettings()">Generate With Settings</button>
+        <label>Width: </label>
+        <input type="number" id="width">
+        <label>Height: </label>
+        <input type="number" id="height">
+        <label>Seed: </label>
+        <input type="text" id="seed">
+        <label>Octaves: </label>
+        <input type="number" id="octaves">   
+        <label>Cell Size: </label>
+        <input type="number" id="cellSize">   
+        <label>Frequency: </label>
+        <input type="number" id="frequency">
+        <label>Factor: </label>
+        <input type="number" id="factor">
+        <label>Roughness: </label>
+        <input type="number" id="roughness">   
+        <label>Persistence: </label>
+        <input type="number" id="persistence">      
+        <label>Contrast: </label>
+        <input type="number" id="contrast">    
+        <label>Offset X: </label>
+        <input type="number" id="offsetX">   
+        <label>Offset Y: </label>
+        <input type="number" id="offsetY">    
+        <label>Tick Time: </label>
+        <input type="number" id="tickTime"> 
+        <label>Scale: </label>
+        <input type="number" id="scale"> 
+        <label>Growth Rate: </label>
+        <input type="number" id="growthRate"> 
+        <label>Decay Rate: </label>
+        <input type="number" id="decayRate"> 
+        <label>Speed Factor: </label>
+        <input type="number" id="speedFactor"> 
+    </div>
+
+    <canvas width="500" height="500" id="canvas" style="width: 500px; height: 500px; background-color: white;" ></canvas>
+    
+    <script src="perlin.js"></script>
+    <script>
+        let canvas = document.getElementById('canvas')
+        let ctx = canvas.getContext('2d')
+
+        let seed = "seed"
+        let octaves = 5
+        let cellSize = 500
+        let frequency = 1
+        let factor = 1
+        let roughness = 5
+        let persistence = 0.4
+        let contrast = 1
+        let offsetX = 0
+        let offsetY = 0
+        let scale = 2
+        let tickTime = 50
+        let growthRate = 0.05
+        let decayRate = 0.05
+        let speedFactor = 0.5
+
+        class Vector2 {
+            constructor(x, y) {
+                this.x = x
+                this.y = y
+            }
+
+            add(v2) {
+                this.x += v2.x
+                this.y += v2.y
+            }
+
+            scale(scalar) {
+                this.x *= scalar
+                this.y *= scalar
+            }
+
+            clone() {
+                return new Vector2(this.x, this.y)
+            }
+        }
+
+        class Particle {
+            constructor() {
+                this.pos = new Vector2(0, 0)
+                this.vel = new Vector2(0, 0)
+                this.acc = new Vector2(0, 0)
+            }
+
+            update() {
+                this.wrapped = false
+
+                this.lastPos = this.pos.clone()
+                this.vel.add(this.acc)
+                this.pos.add(this.vel)
+                this.acc.scale(0)
+
+                this.edges()
+
+                if (!this.wrapped) {
+                    this.render()
+                }
+
+                this.vel.scale(speedFactor)
+            }
+
+            edges() {
+                if (this.pos.x > canvas.width) {
+                    this.pos.x = 0
+                    this.wrapped = true
+                } else if (this.pos.x < 0) {
+                    this.pos.x = canvas.width
+                    this.wrapped = true
+                }
+                if (this.pos.y > canvas.height) {
+                    this.pos.y = 0
+                    this.wrapped = true
+                } else if (this.pos.y < 0) {
+                    this.pos.y = canvas.height
+                    this.wrapped = true
+                }
+
+                if (this.wrapped) {
+                    this.vel.scale(0)
+                }
+            }
+
+            render() {
+                ctx.beginPath()
+                ctx.moveTo(this.lastPos.x, this.lastPos.y)
+                ctx.lineTo(this.pos.x, this.pos.y)
+                ctx.stroke()
+            }
+
+            applyForce(force) {
+                this.acc.add(force)
+            }
+        }
+
+        let particles = []
+
+        let noise
+        let interval
+
+        function generateNoise() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            noise = new Perlin(seed)
+            
+            if (interval) {
+                clearInterval(interval)
+            }
+
+            particles = []
+
+            for (let x = 0; x < canvas.width / scale; x++) {
+                for (let y = 0; y < canvas.height / scale; y++) {
+                    let sel = new Particle()
+
+                    sel.pos.x = x * scale
+                    sel.pos.y = y * scale
+
+                    particles.push(sel)
+                }
+            }
+
+            ctx.fillStyle = "rgba(255, 255, 255, 1)"
+
+            interval = setInterval(function() {
+                updateParticles()
+            }, tickTime)
+        }
+
+        function updateParticles() {
+            ctx.globalAlpha = decayRate
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+            ctx.globalAlpha = growthRate
+
+            for (let x = 0; x < particles.length; x++) {
+                let sel = particles[x]
+
+                let val = noise.perlinLayered(sel.pos.x, sel.pos.y, octaves, cellSize, frequency, factor, roughness, persistence, contrast)
+
+                if (val < -1) {
+                    val = -1
+                } else if (val > 1) {
+                    val = 1
+                }
+
+                val = (val + 1) / 2
+
+                let force = new Vector2(Math.cos(val * Math.PI * 2), Math.sin(val * Math.PI * 2))
+
+                sel.applyForce(force)
+                sel.update()
+            }
+        }
+
+        function generateWithSettings() {
+            canvas.width = document.getElementById('width').value
+            canvas.height = document.getElementById('height').value
+            seed = document.getElementById('seed').value
+            octaves = document.getElementById('octaves').value
+            cellSize = document.getElementById('cellSize').value
+            frequency = document.getElementById('frequency').value
+            factor = document.getElementById('factor').value
+            roughness = document.getElementById('roughness').value
+            persistence = document.getElementById('persistence').value
+            contrast = document.getElementById('contrast').value
+            offsetX = document.getElementById('offsetX').value
+            offsetY = document.getElementById('offsetY').value
+            tickTime = document.getElementById('tickTime').value
+            scale = document.getElementById('scale').value
+            growthRate = document.getElementById('growthRate').value
+            decayRate = document.getElementById('decayRate').value
+            speedFactor = document.getElementById('speedFactor').value
+
+            generateNoise()
+        }
+
+        function onload() {
+            try {
+                canvas.width = canvas.clientWidth
+                canvas.height = canvas.clientHeight
+
+                document.getElementById('width').value = canvas.width
+                document.getElementById('height').value = canvas.height
+                document.getElementById('seed').value = seed
+                document.getElementById('octaves').value = octaves
+                document.getElementById('cellSize').value = cellSize
+                document.getElementById('frequency').value = frequency
+                document.getElementById('factor').value = factor
+                document.getElementById('roughness').value = roughness
+                document.getElementById('persistence').value = persistence
+                document.getElementById('contrast').value = contrast
+                document.getElementById('offsetX').value = offsetX
+                document.getElementById('offsetY').value = offsetY
+                document.getElementById('tickTime').value = tickTime
+                document.getElementById('scale').value = scale
+                document.getElementById('growthRate').value = growthRate
+                document.getElementById('decayRate').value = decayRate
+                document.getElementById('speedFactor').value = speedFactor
+
+                generateNoise()                
+            } catch (error) {
+                alert(error)
+            }
+        }
+    </script>
+</body>
+</html>
