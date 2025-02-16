@@ -10,6 +10,8 @@
             margin: 0;
             padding: none;
             background-color: darkslategrey;
+            overflow-x: hidden;
+            overflow-y: hidden;
         }
 
         label {
@@ -22,7 +24,18 @@
         }
     </style>
 </head>
-<body onload="onload()">
+    <body onload="onload()"><div id="colorGradientsDiv" style="position: absolute; left: 0; padding: 2vh">
+        <button onclick="addGradient()">Add Gradient</button>
+        <label>Depth level: -1 to 1</label>
+        <input type="number" id="gradientWeight" value="0">
+        <label>R</label>
+        <input type="number" id="gradientR" value="255">
+        <label>G</label>
+        <input type="number" id="gradientG" value="255">
+        <label>B</label>
+        <input type="number" id="gradientB" value="255">
+    </div>
+
     <div id="optionsDiv" style="position: absolute; right: 0; padding: 2vh;">
         <button onclick="generateWithSettings()">Generate With Settings</button>
         <label>Width: </label>
@@ -61,31 +74,37 @@
         <input type="number" id="speedFactor"> 
         <label>Rebirth Rate: </label>
         <input type="number" id="rebirthRate"> 
+        <label>Color Contrast: </label>
+        <input type="number" id="colorContrast"> 
+        <label>Color Volatility: </label>
+        <input type="number" id="colorVolatility"> 
     </div>
 
-    <canvas width="500" height="500" id="canvas" style="width: 100vw; height: 100vh; background-color: black;" ></canvas>
+    <canvas width="500" height="500" id="canvas" style="width: 100vw; height: 100vh; background-color: rgb(0, 0, 0);" ></canvas>
     
     <script src="perlin.js"></script>
     <script>
         let canvas = document.getElementById('canvas')
         let ctx = canvas.getContext('2d')
 
-        let seed = "seed"
-        let octaves = 1
-        let cellSize = 500
+        let seed = Math.random() * 100
+        let octaves = 2
+        let cellSize = 100
         let frequency = 1
         let factor = 1
         let roughness = 3
-        let persistence = 0.9
-        let contrast = 1
+        let persistence = 0.4
+        let contrast = 1.5
         let offsetX = 0
         let offsetY = 0
         let scale = 15
         let tickTime = 10
         let growthRate = 0.1
         let decayRate = 0.05
-        let speedFactor = 0.25
-        let rebirthRate = 250
+        let speedFactor = 0.01
+        let rebirthRate = 500
+        let colorContrast = 10
+        let colorVolatility = 0
 
         class Vector2 {
             constructor(x, y) {
@@ -119,6 +138,7 @@
             update() {
                 if (totalTime % rebirthRate == 0) {
                     this.pos = this.originalPos.clone()
+		    this.vel.scale(0)
                 }
 
                 this.wrapped = false
@@ -171,14 +191,9 @@
         }
 
         let gradients = [
-            {weight: -1, color: [0, 0, 128, 255]},
-            {weight: -0.25, color: [0, 0, 255, 255]},
-            {weight: 0, color: [0, 128, 255, 255]},
-            {weight: 0.0625, color: [240, 240, 64, 255]},
-            {weight: 0.125, color: [32, 160, 0, 255]},
-            {weight: 0.375, color: [224, 224, 0, 255]},
-            {weight: 0.75, color: [128, 128, 128, 255]},
-            {weight: 1, color: [255, 255, 255, 255]},
+            {weight: -1, color: [0, 255, 0, 255]},
+            {weight: 0, color: [0, 0, 255, 255]},
+            {weight: 1, color: [255, 0, 0, 255]},
         ]
 
         let lookup = {
@@ -231,11 +246,23 @@
             }, tickTime)
         }
 
+        function lerp(val1, val2, weight) {
+            return val1 + (val2 - val1) * weight
+        }
+
+        function smooth(t) {
+            let t3 = t * t * t
+            let t4 = t3 * t
+            let t5 = t4 * t
+            return 6 * t5 - 15 * t4 + 10 * t3
+        }
+
         function updateParticles() {
-            ctx.globalAlpha = decayRate
+            ctx.globalAlpha = decayRate * smooth((rebirthRate - totalTime) / rebirthRate)
+            ctx.fillStyle = "rgb(0, 0, 0)"
             ctx.fillRect(0, 0, canvas.width, canvas.height)
             ctx.globalAlpha = 1
-
+            
             for (let x = 0; x < particles.length; x++) {
                 let sel = particles[x]
 
@@ -247,12 +274,12 @@
                     val = 1
                 }
 
-                val = Math.round(val * 100) / 100
+                let colorVal = Math.round(val * 100) / 100
 
                 let finalColor
 
-                if (lookup[val]) {
-                    finalColor = lookup[val]
+                if (lookup[colorVal]) {
+                    finalColor = lookup[colorVal]
                 } else {
                     let color1 = [0, 0, 0, 0]
                     let color2 = [0, 0, 0, 0]
@@ -261,18 +288,18 @@
 
                     let colorIndex = 0
 
-                    while (val > gradients[colorIndex].weight) {
+                    while (colorVal > gradients[colorIndex].weight) {
                         colorIndex++
                     }
 
                     color1 = gradients[colorIndex - 1].color
                     color2 = gradients[colorIndex].color
 
-                    weight = (gradients[colorIndex - 1].weight - val) / (gradients[colorIndex - 1].weight - gradients[colorIndex].weight)
+                    weight = (gradients[colorIndex - 1].weight - colorVal) / (gradients[colorIndex - 1].weight - gradients[colorIndex].weight)
 
-                    finalColor = interpolateRGBA(color1, color2, weight)
+                    finalColor = interpolateRGBA(color1, color2, weight ** 0.75)
 
-                    lookup[val] = finalColor
+                    lookup[colorVal] = finalColor
                 }
 
                 val = (val + 1) / 2
@@ -288,11 +315,37 @@
             if (totalTime % rebirthRate == 0) {
                 totalTime = 0
                 noise = new Perlin(Math.floor(Math.random() * 100))
+		        contrast = Math.random() * 1 + 1
+                octaves = Math.floor(Math.random() * 7) + 1
+                roughness = Math.floor(Math.random() * 7) + 1
+                persistence = Math.random() * 1
+                cellSize = Math.floor(Math.random() * 500) + 100
+                colorContrast = Math.random() * 15
+		        speedFactor = Math.random() * 0.1 + 0.01
+
+                for (let x = 0; x < gradients.length; x++) {
+                    for (let y = 0; y < gradients[x].color.length - 1; y++) {
+                        gradients[x].color[y] *= 1 + (Math.random() * colorVolatility * 2) - colorVolatility
+                    }
+                }
+
+                lookup = {"-1": gradients[0], "1": gradients[gradients.length - 1]}
             }
 
             totalTime += 1
+        }
+        
+        function addGradient() {
+            let newGradient = {}
 
-            
+            newGradient.weight = document.getElementById('gradientWeight').value
+            newGradient.color = []
+            newGradient.color[0] = document.getElementById('gradientR').value
+            newGradient.color[1] = document.getElementById('gradientG').value
+            newGradient.color[2] = document.getElementById('gradientB').value
+            newGradient.color[3] = 255
+
+            gradients.push(newGradient)
         }
 
         function generateWithSettings() {
@@ -314,6 +367,8 @@
             decayRate = document.getElementById('decayRate').value
             speedFactor = document.getElementById('speedFactor').value
             rebirthRate = document.getElementById('rebirthRate').value
+            colorContrast = document.getElementById('colorContrast').value
+            colorVolatility = document.getElementById('colorVolatility').value
 
             generateNoise()
         }
@@ -341,6 +396,8 @@
                 document.getElementById('decayRate').value = decayRate
                 document.getElementById('speedFactor').value = speedFactor
                 document.getElementById('rebirthRate').value = rebirthRate
+                document.getElementById('colorContrast').value = colorContrast
+                document.getElementById('colorVolatility').value = colorVolatility
 
                 generateNoise()                
             } catch (error) {
