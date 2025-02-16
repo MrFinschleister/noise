@@ -59,6 +59,8 @@
         <input type="number" id="decayRate"> 
         <label>Speed Factor: </label>
         <input type="number" id="speedFactor"> 
+        <label>Rebirth Rate: </label>
+        <input type="number" id="rebirthRate"> 
     </div>
 
     <canvas width="500" height="500" id="canvas" style="width: 100vw; height: 100vh; background-color: black;" ></canvas>
@@ -69,7 +71,7 @@
         let ctx = canvas.getContext('2d')
 
         let seed = "seed"
-        let octaves = 4
+        let octaves = 2
         let cellSize = 500
         let frequency = 1
         let factor = 1
@@ -78,11 +80,12 @@
         let contrast = 1
         let offsetX = 0
         let offsetY = 0
-        let scale = 25
-        let tickTime = 100
+        let scale = 15
+        let tickTime = 10
         let growthRate = 0.1
         let decayRate = 0.05
-        let speedFactor = 0.5
+        let speedFactor = 0.25
+        let rebirthRate = 250
 
         class Vector2 {
             constructor(x, y) {
@@ -107,12 +110,17 @@
 
         class Particle {
             constructor() {
+                this.originalPos = new Vector2(0, 0)
                 this.pos = new Vector2(0, 0)
                 this.vel = new Vector2(0, 0)
                 this.acc = new Vector2(0, 0)
             }
 
             update() {
+                if (totalTime % rebirthRate == 0) {
+                    this.pos = this.originalPos.clone()
+                }
+
                 this.wrapped = false
 
                 this.lastPos = this.pos.clone()
@@ -192,9 +200,12 @@
         let noise
         let interval
 
+        let totalTime
+
         function generateNoise() {
             ctx.clearRect(0, 0, canvas.width, canvas.height)
             noise = new Perlin(seed)
+            totalTime = 0
             
             if (interval) {
                 clearInterval(interval)
@@ -206,8 +217,10 @@
                 for (let y = 0; y < canvas.height / scale; y++) {
                     let sel = new Particle()
 
-                    sel.pos.x = x * scale
-                    sel.pos.y = y * scale
+                    sel.originalPos.x = x * scale
+                    sel.originalPos.y = y * scale
+
+                    sel.pos = sel.originalPos.clone()
 
                     particles.push(sel)
                 }
@@ -271,6 +284,15 @@
                 sel.applyForce(force)
                 sel.update()
             }
+
+            if (totalTime % rebirthRate == 0) {
+                totalTime = 0
+                noise = new Perlin(Math.floor(Math.random() * 100))
+            }
+
+            totalTime += 1
+
+            
         }
 
         function generateWithSettings() {
@@ -291,6 +313,7 @@
             growthRate = document.getElementById('growthRate').value
             decayRate = document.getElementById('decayRate').value
             speedFactor = document.getElementById('speedFactor').value
+            rebirthRate = document.getElementById('rebirthRate').value
 
             generateNoise()
         }
@@ -317,6 +340,7 @@
                 document.getElementById('growthRate').value = growthRate
                 document.getElementById('decayRate').value = decayRate
                 document.getElementById('speedFactor').value = speedFactor
+                document.getElementById('rebirthRate').value = rebirthRate
 
                 generateNoise()                
             } catch (error) {
