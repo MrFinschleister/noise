@@ -24,7 +24,8 @@
         }
     </style>
 </head>
-    <body onload="onload()"><div id="colorGradientsDiv" style="position: absolute; left: 0; padding: 2vh">
+    <body onload="onload()">
+    <div id="gradientsDiv" style="position: absolute; left: 0; padding: 2vh; display: none;">
         <button onclick="addGradient()">Add Gradient</button>
         <label>Depth level: -1 to 1</label>
         <input type="number" id="gradientWeight" value="0">
@@ -36,7 +37,7 @@
         <input type="number" id="gradientB" value="255">
     </div>
 
-    <div id="optionsDiv" style="position: absolute; right: 0; padding: 2vh;">
+    <div id="optionsDiv" style="position: absolute; right: 0; padding: 2vh; display: none;">
         <button onclick="generateWithSettings()">Generate With Settings</button>
         <label>Width: </label>
         <input type="number" id="width">
@@ -99,12 +100,39 @@
         let offsetY = 0
         let scale = 15
         let tickTime = 10
-        let growthRate = 0.1
+        let growthRate = 0.25
         let decayRate = 0.05
-        let speedFactor = 0.01
+        let speedFactor = 0.5
         let rebirthRate = 500
         let colorContrast = 10
         let colorVolatility = 0
+        let doRebirth = true
+        let useRandomness = true
+        let editingMode = false
+
+        let noise = new Perlin(seed)
+        let interval
+
+        let totalTime = 0
+        let numRebirths = 0
+
+        let gradients = [
+            {weight: -1, color: [0, 255, 0, 255]},
+            {weight: 0, color: [0, 0, 255, 255]},
+            {weight: 1, color: [255, 0, 0, 255]},
+        ]
+
+        let gradientLookup = {
+
+        }
+
+        let particles = []
+
+        let useClickInfluence = false
+        let clickInfluence
+
+        let clickInfluenceRadius = 100
+        let clickInfluenceStrength = 1
 
         class Vector2 {
             constructor(x, y) {
@@ -136,11 +164,6 @@
             }
 
             update() {
-                if (totalTime % rebirthRate == 0) {
-                    this.pos = this.originalPos.clone()
-		    this.vel.scale(0)
-                }
-
                 this.wrapped = false
 
                 this.lastPos = this.pos.clone()
@@ -148,13 +171,13 @@
                 this.pos.add(this.vel)
                 this.acc.scale(0)
 
+                this.vel.scale(speedFactor)
+
                 this.edges()
 
                 if (!this.wrapped) {
                     this.render()
                 }
-
-                this.vel.scale(speedFactor)
             }
 
             edges() {
@@ -190,17 +213,6 @@
             }
         }
 
-        let gradients = [
-            {weight: -1, color: [0, 255, 0, 255]},
-            {weight: 0, color: [0, 0, 255, 255]},
-            {weight: 1, color: [255, 0, 0, 255]},
-        ]
-
-        let lookup = {
-            "-1": [0, 0, 128, 255],
-            "1": {weight: 1, color: [255, 255, 255, 255]},
-        }
-
         function interpolateRGBA(color1, color2, weight) {
             let r3 = color1[0] + (color2[0] - color1[0]) * weight
             let g3 = color1[1] + (color2[1] - color1[1]) * weight
@@ -210,22 +222,12 @@
             return [r3, g3, b3, a3]
         }
 
-        let particles = []
+        function lerp(val1, val2, weight) {
+            return val1 + (val2 - val1) * weight
+        }
 
-        let noise
-        let interval
-
-        let totalTime
-
-        function generateNoise() {
+        function generateParticles() {
             ctx.clearRect(0, 0, canvas.width, canvas.height)
-            noise = new Perlin(seed)
-            totalTime = 0
-            
-            if (interval) {
-                clearInterval(interval)
-            }
-
             particles = []
 
             for (let x = 0; x < canvas.width / scale; x++) {
@@ -240,29 +242,46 @@
                     particles.push(sel)
                 }
             }
+        }
 
+        function beginInterval() {
+            totalTime = 0
+            numRebirths = 0
+
+            if (interval) {
+                clearInterval(interval)
+            }
+            
             interval = setInterval(function() {
-                updateParticles()
+                tick()
             }, tickTime)
         }
 
-        function lerp(val1, val2, weight) {
-            return val1 + (val2 - val1) * weight
-        }
+        function tick() {
+            if (totalTime % rebirthRate == 0 && doRebirth && useRandomness) {
+                randomiseStuff()
+                numRebirths++
+            }
 
-        function smooth(t) {
-            let t3 = t * t * t
-            let t4 = t3 * t
-            let t5 = t4 * t
-            return 6 * t5 - 15 * t4 + 10 * t3
-        }
+            if (numRebirths > 10) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height )
+            }
 
-        function updateParticles() {
-            ctx.globalAlpha = decayRate * smooth((rebirthRate - totalTime) / rebirthRate)
+            totalTime += 1
+
+            ctx.globalAlpha = decayRate
             ctx.fillStyle = "rgb(0, 0, 0)"
             ctx.fillRect(0, 0, canvas.width, canvas.height)
             ctx.globalAlpha = 1
-            
+
+            updateParticles()
+
+            let data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+
+            ctx.putImageData(new ImageData(data, canvas.width), 0, 0)
+        }
+
+        function updateParticles() {
             for (let x = 0; x < particles.length; x++) {
                 let sel = particles[x]
 
@@ -274,65 +293,100 @@
                     val = 1
                 }
 
-                let colorVal = Math.round(val * 100) / 100
+                let colorVal = val.toFixed(1)
 
-                let finalColor
-
-                if (lookup[colorVal]) {
-                    finalColor = lookup[colorVal]
-                } else {
-                    let color1 = [0, 0, 0, 0]
-                    let color2 = [0, 0, 0, 0]
-
-                    let weight = 0
-
-                    let colorIndex = 0
-
-                    while (colorVal > gradients[colorIndex].weight) {
-                        colorIndex++
-                    }
-
-                    color1 = gradients[colorIndex - 1].color
-                    color2 = gradients[colorIndex].color
-
-                    weight = (gradients[colorIndex - 1].weight - colorVal) / (gradients[colorIndex - 1].weight - gradients[colorIndex].weight)
-
-                    finalColor = interpolateRGBA(color1, color2, weight ** 0.75)
-
-                    lookup[colorVal] = finalColor
-                }
-
-                val = (val + 1) / 2
+                let finalColor = gradientLookup[colorVal] ? gradientLookup[colorVal] : addGradientLookup(colorVal)
 
                 ctx.strokeStyle = "rgba(" + finalColor[0] + ", " + finalColor[1] + ", " + finalColor[2] + ", " + growthRate + ")"
 
-                let force = new Vector2(Math.cos(val * Math.PI * 2), Math.sin(val * Math.PI * 2))
+                let force = new Vector2(Math.cos(val * Math.PI), Math.sin(val * Math.PI))
+                force.scale(speedFactor)
+                
+                if (useClickInfluence) {
+                    let distanceX = clickInfluence.x - sel.pos.x
+                    let distanceY = clickInfluence.y - sel.pos.y
+                    let distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY)
+
+                    if (distance < clickInfluenceRadius && distanceX != 0 && distanceY != 0) {
+                        let force1 = new Vector2(distanceX / distance, distanceY / distance)
+                        force1.scale(clickInfluenceStrength)
+
+                        force.add(force1)
+                    }
+                }
 
                 sel.applyForce(force)
                 sel.update()
             }
+        }
 
-            if (totalTime % rebirthRate == 0) {
-                totalTime = 0
-                noise = new Perlin(Math.floor(Math.random() * 100))
-		        contrast = Math.random() * 1 + 1
-                octaves = Math.floor(Math.random() * 7) + 1
-                roughness = Math.floor(Math.random() * 7) + 1
-                persistence = Math.random() * 1
-                cellSize = Math.floor(Math.random() * 500) + 100
-                colorContrast = Math.random() * 15
-		        speedFactor = Math.random() * 0.1 + 0.01
+        function addGradientLookup(colorVal) {
+            let color1 = [0, 0, 0, 0]
+            let color2 = [0, 0, 0, 0]
 
-                for (let x = 0; x < gradients.length; x++) {
-                    for (let y = 0; y < gradients[x].color.length - 1; y++) {
-                        gradients[x].color[y] *= 1 + (Math.random() * colorVolatility * 2) - colorVolatility
-                    }
-                }
+            let weight = 0
 
-                lookup = {"-1": gradients[0], "1": gradients[gradients.length - 1]}
+            let colorIndex = 0
+
+            while (colorVal > gradients[colorIndex].weight) {
+                colorIndex++
             }
 
-            totalTime += 1
+            color1 = gradients[colorIndex - 1].color
+            color2 = gradients[colorIndex].color
+
+            weight = (gradients[colorIndex - 1].weight - colorVal) / (gradients[colorIndex - 1].weight - gradients[colorIndex].weight)
+
+            let finalColor = interpolateRGBA(color1, color2, Math.pow(weight, 0.75))
+
+            gradientLookup[colorVal] = finalColor
+
+            return finalColor
+        }
+
+        function setupGradientLookup() {
+            gradientLookup = {"-1.0": gradients[0], "1.0": gradients[gradients.length - 1]}
+
+            for (let x = -1; x <= 1; x += 0.1) {
+                if (gradientLookup[x.toFixed(1)]) {
+                    continue
+                }
+                
+                addGradientLookup(x.toFixed(1))
+            }
+        }
+
+        function randomiseStuff() {
+            for (let x = 0; x < particles.length; x++) {
+                particles[x].pos = particles[x].originalPos.clone()
+                particles[x].vel.scale(0)
+            }
+
+            let contrastRange = [1, 2]
+            let octavesRange = [1, 4]
+            let roughnessRange = [1, 8]
+            let persistenceRange = [0, 1]
+            let cellSizeRange = [100, 500]
+            let colorContrastRange = [1, 15]
+            let speedFactorRange = [0.25, 0.5]
+            
+            noise = new Perlin(Math.random() * 100)
+            contrast = Math.random() * (contrastRange[1] - contrastRange[0]) + contrastRange[0]
+            octaves = Math.round(Math.random() * (octavesRange[1] - octavesRange[0])) + octavesRange[0]
+            roughness = Math.round(Math.random() * (roughnessRange[1] - roughnessRange[0])) + roughnessRange[0]
+            persistence = Math.random() * (persistenceRange[1] - persistenceRange[0]) + persistenceRange[0]
+            cellSize = Math.round(Math.random() * (cellSizeRange[1] - cellSizeRange[0])) + cellSizeRange[1]
+            colorContrast = Math.random() * (colorContrastRange[1] - colorContrastRange[0]) + colorContrastRange[0]
+            speedFactor = Math.random() * (speedFactorRange[1] - speedFactorRange[0]) + speedFactorRange[1]
+
+            for (let x = 0; x < gradients.length; x++) {
+                for (let y = 0; y < gradients[x].color.length - 1; y++) {
+                    gradients[x].color[y] *= 1 + (Math.random() * colorVolatility * 2) - colorVolatility
+                }
+            }
+
+            setupGradientLookup()
+            updateData()
         }
         
         function addGradient() {
@@ -370,39 +424,99 @@
             colorContrast = document.getElementById('colorContrast').value
             colorVolatility = document.getElementById('colorVolatility').value
 
-            generateNoise()
+            setup()
+        }
+
+        function updateData() {
+            document.getElementById('width').value = canvas.width
+            document.getElementById('height').value = canvas.height
+            document.getElementById('seed').value = seed
+            document.getElementById('octaves').value = octaves
+            document.getElementById('cellSize').value = cellSize
+            document.getElementById('frequency').value = frequency
+            document.getElementById('factor').value = factor
+            document.getElementById('roughness').value = roughness
+            document.getElementById('persistence').value = persistence
+            document.getElementById('contrast').value = contrast
+            document.getElementById('offsetX').value = offsetX
+            document.getElementById('offsetY').value = offsetY
+            document.getElementById('tickTime').value = tickTime
+            document.getElementById('scale').value = scale
+            document.getElementById('growthRate').value = growthRate
+            document.getElementById('decayRate').value = decayRate
+            document.getElementById('speedFactor').value = speedFactor
+            document.getElementById('rebirthRate').value = rebirthRate
+            document.getElementById('colorContrast').value = colorContrast
+            document.getElementById('colorVolatility').value = colorVolatility
         }
 
         function onload() {
             try {
                 canvas.width = canvas.clientWidth
                 canvas.height = canvas.clientHeight
-
-                document.getElementById('width').value = canvas.width
-                document.getElementById('height').value = canvas.height
-                document.getElementById('seed').value = seed
-                document.getElementById('octaves').value = octaves
-                document.getElementById('cellSize').value = cellSize
-                document.getElementById('frequency').value = frequency
-                document.getElementById('factor').value = factor
-                document.getElementById('roughness').value = roughness
-                document.getElementById('persistence').value = persistence
-                document.getElementById('contrast').value = contrast
-                document.getElementById('offsetX').value = offsetX
-                document.getElementById('offsetY').value = offsetY
-                document.getElementById('tickTime').value = tickTime
-                document.getElementById('scale').value = scale
-                document.getElementById('growthRate').value = growthRate
-                document.getElementById('decayRate').value = decayRate
-                document.getElementById('speedFactor').value = speedFactor
-                document.getElementById('rebirthRate').value = rebirthRate
-                document.getElementById('colorContrast').value = colorContrast
-                document.getElementById('colorVolatility').value = colorVolatility
-
-                generateNoise()                
+                document.addEventListener('mousedown', mousedown)
+                document.addEventListener('touchstart', touchstart)
+                document.addEventListener('keydown', keydown)
+     
+                setup()
             } catch (error) {
                 alert(error)
             }
+        }
+
+        function setup() {
+            if (editingMode) {
+                document.getElementById('gradientsDiv').style.display = "inline"
+                document.getElementById('optionsDiv').style.display = "inline"
+            }
+
+            setupGradientLookup()
+            updateData()
+            generateParticles()
+            beginInterval()
+        }
+
+        function keydown(e) {
+            if (e.key == "Enter") {
+                totalTime = 0
+            } else if (e.key == "Shift") {
+                doRebirth = !doRebirth
+            }
+        }
+        
+        function mousedown(e) {
+            useClickInfluence = true
+            clickInfluence = new Vector2(e.offsetX, e.offsetY)
+            document.addEventListener('mousemove', mousemove)
+            document.addEventListener('mouseup', mouseup)
+        }
+
+        function mousemove(e) {
+            clickInfluence = new Vector2(e.offsetX, e.offsetY)
+        }
+
+        function mouseup(e) {
+            useClickInfluence = false
+            document.removeEventListener('mousemove', mousemove)
+            document.removeEventListener('mouseup', mouseup)
+        }
+
+        function touchstart(e) {
+            useClickInfluence = true
+            clickInfluence = new Vector2(e.touches[0].clientX, e.touches[0].clientY)
+
+            document.addEventListener('touchend', touchend)
+            document.addEventListener('touchmove', touchmove)
+        }
+
+        function touchmove(e) {
+            clickInfluence = new Vector2(e.touches[0].clientX, e.touches[0].clientY)
+        }
+
+        function touchend(e) {
+            useClickInfluence = false
+            document.removeEventListener('touchmove', touchmove)
+            document.removeEventListener('touchend', touchend)
         }
     </script>
 </body>

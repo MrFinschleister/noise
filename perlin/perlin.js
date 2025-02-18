@@ -1,6 +1,10 @@
 class Perlin {
     constructor(seed) {
         this.seed = String(seed)
+
+        this.lookup = {
+
+        }
     }
 
     random(seed) {
@@ -14,17 +18,27 @@ class Perlin {
             h3 = h4 ^ Math.imul(h3 ^ k, 951274213)
             h4 = h1 ^ Math.imul(h4 ^ k, 2716044179)
         }
+        
         h1 ^= (h2 ^ h3 ^ h4), h2 ^= h1, h3 ^= h1, h4 ^= h1
         return Math.abs(h1 / (h2 ^ h3) * h4) % 1
     }
 
     getUnitVector(x, y) {
-        let rand = this.random(this.seed + String(x) + String(y))
+        let seed = this.seed + String(x) + String(y)
 
-        let x1 = Math.cos(rand * Math.PI * 2)
-        let y1 = Math.sin(rand * Math.PI * 2)
+        if (this.lookup[seed]) {
+            return this.lookup[seed]
+        } else {
+            let rand = this.random(seed)
 
-        return [x1, y1]
+            let x1 = Math.cos(rand * Math.PI * 2)
+            let y1 = Math.sin(rand * Math.PI * 2)
+
+            this.lookup[seed] = [x1, y1]
+    
+            return [x1, y1]
+        }
+        
     }
 
     dotProduct(v1, x2, y2) {
