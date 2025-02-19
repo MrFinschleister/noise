@@ -24,7 +24,8 @@
         }
     </style>
 </head>
-    <body onload="onload()">
+<body onload="onload()">
+    <p id="fps" style="position: absolute; color: white; width: 5vw; height: 2vw; margin: 2vh;"></p>
     <div id="gradientsDiv" style="position: absolute; left: 0; padding: 2vh; display: none;">
         <button onclick="addGradient()">Add Gradient</button>
         <label>Depth level: -1 to 1</label>
@@ -100,26 +101,26 @@
         let offsetY = 0
         let scale = 15
         let tickTime = 10
-        let growthRate = 0.25
+        let growthRate = 0.9
         let decayRate = 0.05
         let speedFactor = 0.5
-        let rebirthRate = 500
+        let rebirthRate = 1000
         let colorContrast = 10
         let colorVolatility = 0
         let doRebirth = true
         let useRandomness = true
         let editingMode = false
 
-        let noise = new Perlin(seed)
+        let perlin
         let interval
 
-        let totalTime = 0
+        let totalTicks = 0
         let numRebirths = 0
 
         let gradients = [
-            {weight: -1, color: [0, 255, 0, 255]},
-            {weight: 0, color: [0, 0, 255, 255]},
-            {weight: 1, color: [255, 0, 0, 255]},
+            {weight: -1, color: [255, 0, 0, 255]},
+            {weight: 0, color: [255, 0, 255, 255]},
+            {weight: 1, color: [0, 0, 255, 255]},
         ]
 
         let gradientLookup = {
@@ -129,10 +130,13 @@
         let particles = []
 
         let useClickInfluence = false
-        let clickInfluence
+        let clickX = 0
+        let clickY = 0
+        let clickInfluenceRadius = 50
+        let clickInfluenceStrength = 0.01
 
-        let clickInfluenceRadius = 100
-        let clickInfluenceStrength = 1
+        let returnHomePercent = 0.8
+        let returnHomeWeight = 0
 
         class Vector2 {
             constructor(x, y) {
@@ -156,60 +160,23 @@
         }
 
         class Particle {
-            constructor() {
-                this.originalPos = new Vector2(0, 0)
-                this.pos = new Vector2(0, 0)
-                this.vel = new Vector2(0, 0)
-                this.acc = new Vector2(0, 0)
+            constructor(x, y) {
+                this.x = x
+                this.y = y
+
+                this.originalX = x
+                this.originalY = y
+
+                this.velX = 0
+                this.velY = 0
             }
 
             update() {
-                this.wrapped = false
+                this.velX *= speedFactor
+                this.velY *= speedFactor
 
-                this.lastPos = this.pos.clone()
-                this.vel.add(this.acc)
-                this.pos.add(this.vel)
-                this.acc.scale(0)
-
-                this.vel.scale(speedFactor)
-
-                this.edges()
-
-                if (!this.wrapped) {
-                    this.render()
-                }
-            }
-
-            edges() {
-                if (this.pos.x > canvas.width) {
-                    this.pos.x = 0
-                    this.wrapped = true
-                } else if (this.pos.x < 0) {
-                    this.pos.x = canvas.width
-                    this.wrapped = true
-                }
-                if (this.pos.y > canvas.height) {
-                    this.pos.y = 0
-                    this.wrapped = true
-                } else if (this.pos.y < 0) {
-                    this.pos.y = canvas.height
-                    this.wrapped = true
-                }
-
-                if (this.wrapped) {
-                    this.vel.scale(0)
-                }
-            }
-
-            render() {
-                ctx.beginPath()
-                ctx.moveTo(this.lastPos.x, this.lastPos.y)
-                ctx.lineTo(this.pos.x, this.pos.y)
-                ctx.stroke()
-            }
-
-            applyForce(force) {
-                this.acc.add(force)
+                this.x += this.velX
+                this.y += this.velY
             }
         }
 
@@ -226,18 +193,20 @@
             return val1 + (val2 - val1) * weight
         }
 
+        function ease(t) {
+            let t3 = t * t * t
+            let t4 = t3 * t
+            let t5 = t4 * t
+            return 6 * t5 - 15 * t4 + 10 * t3
+        }
+
         function generateParticles() {
             ctx.clearRect(0, 0, canvas.width, canvas.height)
             particles = []
 
             for (let x = 0; x < canvas.width / scale; x++) {
                 for (let y = 0; y < canvas.height / scale; y++) {
-                    let sel = new Particle()
-
-                    sel.originalPos.x = x * scale
-                    sel.originalPos.y = y * scale
-
-                    sel.pos = sel.originalPos.clone()
+                    let sel = new Particle(x * scale, y * scale)
 
                     particles.push(sel)
                 }
@@ -245,7 +214,7 @@
         }
 
         function beginInterval() {
-            totalTime = 0
+            totalTicks = 0
             numRebirths = 0
 
             if (interval) {
@@ -258,34 +227,39 @@
         }
 
         function tick() {
-            if (totalTime % rebirthRate == 0 && doRebirth && useRandomness) {
+            if (totalTicks % rebirthRate == 0 && doRebirth && useRandomness) {
                 randomiseStuff()
                 numRebirths++
+
+                for (let x = 0; x < particles.length; x++) {
+                    let x1 = particles[x].x
+                    let y1 = particles[x].y
+                    let oX = particles[x].originalX
+                    let oY = particles[x].originalY
+
+                    if (Math.abs(x1 - oX) > 50 || Math.abs(y1 - oY) > 50) {
+                        particles[x].x = oX
+                        particles[x].y = oY
+                    }
+                }
             }
 
-            if (numRebirths > 10) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height )
-            }
-
-            totalTime += 1
-
-            ctx.globalAlpha = decayRate
-            ctx.fillStyle = "rgb(0, 0, 0)"
+            ctx.fillStyle = "rgba(0, 0, 0, " + decayRate + ")"
             ctx.fillRect(0, 0, canvas.width, canvas.height)
-            ctx.globalAlpha = 1
 
             updateParticles()
-
-            let data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-
-            ctx.putImageData(new ImageData(data, canvas.width), 0, 0)
+            totalTicks += 1
         }
 
         function updateParticles() {
+            let percentageComplete = (totalTicks % rebirthRate) / rebirthRate
+
+            let opacity = percentageComplete > returnHomePercent ? growthRate / 2 : growthRate
+
             for (let x = 0; x < particles.length; x++) {
                 let sel = particles[x]
 
-                let val = noise.perlinLayered(sel.pos.x, sel.pos.y, octaves, cellSize, frequency, factor, roughness, persistence, contrast)
+                let val = perlin.perlinLayered(sel.x, sel.y)
 
                 if (val < -1) {
                     val = -1
@@ -296,27 +270,75 @@
                 let colorVal = val.toFixed(1)
 
                 let finalColor = gradientLookup[colorVal] ? gradientLookup[colorVal] : addGradientLookup(colorVal)
-
                 ctx.strokeStyle = "rgba(" + finalColor[0] + ", " + finalColor[1] + ", " + finalColor[2] + ", " + growthRate + ")"
 
-                let force = new Vector2(Math.cos(val * Math.PI), Math.sin(val * Math.PI))
-                force.scale(speedFactor)
-                
+                let forceX = Math.cos(val * Math.PI) * speedFactor
+                let forceY = Math.sin(val * Math.PI) * speedFactor
+
                 if (useClickInfluence) {
-                    let distanceX = clickInfluence.x - sel.pos.x
-                    let distanceY = clickInfluence.y - sel.pos.y
-                    let distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY)
+                    let dX = clickX - sel.x
+                    let dY = clickY - sel.y
 
-                    if (distance < clickInfluenceRadius && distanceX != 0 && distanceY != 0) {
-                        let force1 = new Vector2(distanceX / distance, distanceY / distance)
-                        force1.scale(clickInfluenceStrength)
+                    let distance = Math.sqrt(dX * dX + dY * dY)
 
-                        force.add(force1)
+                    if (distance <= clickInfluenceRadius && distance != 0) {
+                        forceX += dX / distance * clickInfluenceStrength
+                        forceY += dY / distance * clickInfluenceStrength
                     }
                 }
 
-                sel.applyForce(force)
+                if (percentageComplete > returnHomePercent) {
+                    let dX = sel.originalX - sel.x
+                    let dY = sel.originalY - sel.y
+
+                    if (Math.abs(dX) > canvas.width / 2) {
+                        dX *= -1
+                    }
+
+                    if (Math.abs(dY) > canvas.height / 2) {
+                        dY *= -1
+                    }
+
+                    let distance = Math.sqrt(dX * dX + dY * dY)
+
+                    if (distance != 0) {
+                        forceX += dX / distance * returnHomeWeight / percentageComplete
+                        forceY += dY / distance * returnHomeWeight / percentageComplete
+                    }                    
+                }
+
+                sel.velX += forceX
+                sel.velY += forceY
+
+                let oldX = sel.x
+                let oldY = sel.y
+
                 sel.update()
+
+                let wrapped = true
+
+                if (sel.x < 0) {
+                    sel.x = canvas.width
+                    wrapped = false
+                } else if (sel.x > canvas.width) {
+                    sel.x = 0
+                    wrapped = false
+                }
+                
+                if (sel.y < 0) {
+                    sel.y = canvas.height
+                    wrapped = false
+                } else if (sel.y > canvas.height) {
+                    sel.y = 0
+                    wrapped = false
+                }
+                
+                if (wrapped) {
+                    ctx.beginPath()
+                    ctx.moveTo(oldX, oldY)
+                    ctx.lineTo(sel.x, sel.y)
+                    ctx.stroke()
+                }
             }
         }
 
@@ -345,6 +367,11 @@
         }
 
         function setupGradientLookup() {
+            gradients.sort((a, b) => a.weight - b.weight)
+
+            gradients[0].weight = -1
+            gradients[gradients.length - 1].weight = 1
+
             gradientLookup = {"-1.0": gradients[0], "1.0": gradients[gradients.length - 1]}
 
             for (let x = -1; x <= 1; x += 0.1) {
@@ -357,36 +384,42 @@
         }
 
         function randomiseStuff() {
-            for (let x = 0; x < particles.length; x++) {
-                particles[x].pos = particles[x].originalPos.clone()
-                particles[x].vel.scale(0)
-            }
-
             let contrastRange = [1, 2]
             let octavesRange = [1, 4]
             let roughnessRange = [1, 8]
             let persistenceRange = [0, 1]
             let cellSizeRange = [100, 500]
-            let colorContrastRange = [1, 15]
-            let speedFactorRange = [0.25, 0.5]
+            let colorContrastRange = [10, 15]
+            let speedFactorRange = [0.4, 0.65]
             
-            noise = new Perlin(Math.random() * 100)
-            contrast = Math.random() * (contrastRange[1] - contrastRange[0]) + contrastRange[0]
-            octaves = Math.round(Math.random() * (octavesRange[1] - octavesRange[0])) + octavesRange[0]
-            roughness = Math.round(Math.random() * (roughnessRange[1] - roughnessRange[0])) + roughnessRange[0]
-            persistence = Math.random() * (persistenceRange[1] - persistenceRange[0]) + persistenceRange[0]
-            cellSize = Math.round(Math.random() * (cellSizeRange[1] - cellSizeRange[0])) + cellSizeRange[1]
-            colorContrast = Math.random() * (colorContrastRange[1] - colorContrastRange[0]) + colorContrastRange[0]
-            speedFactor = Math.random() * (speedFactorRange[1] - speedFactorRange[0]) + speedFactorRange[1]
+            seed = Math.random() * 100
+            contrast = randRange(contrastRange)
+            octaves = Math.round(randRange(octavesRange))
+            roughness = Math.round(randRange(roughnessRange))
+            persistence = randRange(persistenceRange)
+            cellSize = Math.round(randRange(cellSizeRange))
+            colorContrast = randRange(colorContrastRange)
+            speedFactor = randRange(speedFactorRange)
 
-            for (let x = 0; x < gradients.length; x++) {
-                for (let y = 0; y < gradients[x].color.length - 1; y++) {
-                    gradients[x].color[y] *= 1 + (Math.random() * colorVolatility * 2) - colorVolatility
-                }
-            }
-
+            setPerlin()
             setupGradientLookup()
             updateData()
+        }
+
+        function randRange(range) {
+            return (Math.random() * (range[1] - range[0])) + range[0]
+        }
+
+        function setPerlin() {
+            perlin = new Perlin(seed)
+
+            perlin.octaves = octaves
+            perlin.cellSize = cellSize
+            perlin.frequency = frequency
+            perlin.factor = factor
+            perlin.roughness = roughness
+            perlin.persistence = persistence
+            perlin.contrast = contrast
         }
         
         function addGradient() {
@@ -460,7 +493,7 @@
      
                 setup()
             } catch (error) {
-                alert(error)
+                alert(error.stack)
             }
         }
 
@@ -473,12 +506,13 @@
             setupGradientLookup()
             updateData()
             generateParticles()
+            setPerlin()
             beginInterval()
         }
 
         function keydown(e) {
             if (e.key == "Enter") {
-                totalTime = 0
+                totalTicks = 0
             } else if (e.key == "Shift") {
                 doRebirth = !doRebirth
             }
@@ -486,13 +520,15 @@
         
         function mousedown(e) {
             useClickInfluence = true
-            clickInfluence = new Vector2(e.offsetX, e.offsetY)
+            clickX = e.clientX
+            clickY = e.clientY
             document.addEventListener('mousemove', mousemove)
             document.addEventListener('mouseup', mouseup)
         }
 
         function mousemove(e) {
-            clickInfluence = new Vector2(e.offsetX, e.offsetY)
+            clickX = e.clientX
+            clickY = e.clientY
         }
 
         function mouseup(e) {
@@ -503,14 +539,16 @@
 
         function touchstart(e) {
             useClickInfluence = true
-            clickInfluence = new Vector2(e.touches[0].clientX, e.touches[0].clientY)
+            clickX = e.touches[0].clientX
+            clickY = e.touches[0].clientY
 
             document.addEventListener('touchend', touchend)
             document.addEventListener('touchmove', touchmove)
         }
 
         function touchmove(e) {
-            clickInfluence = new Vector2(e.touches[0].clientX, e.touches[0].clientY)
+            clickX = e.touches[0].clientX
+            clickY = e.touches[0].clientY
         }
 
         function touchend(e) {
