@@ -113,12 +113,12 @@
                         val = 1
                     }
                     
-                    val = Math.round(val * 100) / 100
+                    colorVal = Math.round(val * 100) / 100
 
                     let finalColor
 
-                    if (lookup[val]) {
-                        finalColor = lookup[val]
+                    if (lookup[colorVal]) {
+                        finalColor = lookup[colorVal]
                     } else {
                         let color1 = [0, 0, 0, 0]
                         let color2 = [0, 0, 0, 0]
@@ -127,18 +127,18 @@
 
                         let colorIndex = 0
 
-                        while (val > gradients[colorIndex].weight) {
+                        while (colorVal > gradients[colorIndex].weight) {
                             colorIndex++
                         }
 
                         color1 = gradients[colorIndex - 1].color
                         color2 = gradients[colorIndex].color
 
-                        weight = (gradients[colorIndex - 1].weight - val) / (gradients[colorIndex - 1].weight - gradients[colorIndex].weight)
+                        weight = (gradients[colorIndex - 1].weight - colorVal) / (gradients[colorIndex - 1].weight - gradients[colorIndex].weight)
 
-                        finalColor = interpolateRGBA(color1, color2, weight)
+                        finalColor = interpolateRGBA(color1, color2, Math.pow(weight, 0.75))
 
-                        lookup[val] = finalColor
+                        lookup[colorVal] = finalColor
                     }
  
                     let index = (y * canvas.width + x) * 4
@@ -202,7 +202,7 @@
 
                 generateNoise()                
             } catch (error) {
-                alert(error)
+                alert(error.stack)
             }
         }
     </script>
